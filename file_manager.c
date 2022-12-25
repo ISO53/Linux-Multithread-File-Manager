@@ -107,8 +107,9 @@ void *get_item(ArrayList *list, int index)
 //********************************** Array List Functions Ends ***********************************
 
 /**
- * Constantly read the main named pipe to check if any process trying to connect. If so, create
+ * @brief Constantly read the main named pipe to check if any process trying to connect. If so, create
  * another pipe just for that process and start listen that pipe on another thread.
+ * 
  */
 void readMainNamedPipe()
 {
@@ -188,8 +189,10 @@ void readMainNamedPipe()
 }
 
 /**
- * Constantly read the given pipe for inputs. This function should be called for each client that
+ * @brief Constantly read the given pipe for inputs. This function should be called for each client that
  * connects to this service.
+ * 
+ * @param pipeName 
  */
 void readClientThread(char *pipeName)
 {
@@ -214,4 +217,28 @@ void readClientThread(char *pipeName)
 
 		printf("%s: %s", pipeName, buffer);
 	}
+}
+
+/**
+ * @brief Tokenizes the given input into an array of strings and returns the number
+ * of tokenized elements. If the number doesnt match the length, than there is
+ * less token than the given arrays size.
+ *
+ * @param input
+ * @param tokens
+ * @param length
+ * @return int
+ */
+int tokenizeInput(char *input, char **tokens, int length)
+{
+    int counter = 0;
+    char *temp = strtok(input, " ");
+
+    while (temp != NULL && counter < length)
+    {
+        tokens[counter++] = temp;
+        temp = strtok(NULL, " ");
+    }
+
+    return counter;
 }
