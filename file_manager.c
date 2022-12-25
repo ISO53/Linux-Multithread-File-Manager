@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <math.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -25,17 +26,18 @@ void remove_item(ArrayList *list, int index);
 void *get_item(ArrayList *list, int index);
 
 void readMainNamedPipe();
-void readClientThread();
-void uniquePipeName(char *pipeName);
+void readClientThread(char *pipeName);
 
 ArrayList *threadList;
 ArrayList *fileList;
+unsigned long uniqueId;
 
 int main(int argc, char const *argv[])
 {
 
 	threadList = create_list(MAX_THREAD_CAPACITY);
 	fileList = create_list(MAX_FILE_CAPACITY);
+	uniqueId = 0;
 
 	// Main named pipe for newly created processes to connect
 	int result = mkfifo(MAIN_FIFO_NAME, 0666);
@@ -129,61 +131,87 @@ void readMainNamedPipe()
 			return EXIT_FAILURE;
 		}
 
-		if (strlen(buffer) > 0)
+		// Rewing if there isn't a client trying to connect
+		if (strcmp(buffer, "connect") != 0)
 		{
-			// A client wrote something to the pipe.
-			printf("Client wrote: %s\n", buffer);
-
-			// Create a named pipe for that client
-			char pipeName[1];
-			uniquePipeName(pipeName);
-
-			int result = mkfifo(pipeName, 0666);
-			if (result < 0)
-			{
-				perror("Error occured while creating named pipe!\n");
-				exit(EXIT_FAILURE);
-			}
-
-			// Send that pipe name back to the client to listen
-			printf("New Pipe Name: %s\n", pipeName);
-
-			// First close the named pipe that has been opened for reading
-			close(fd);
-
-			// Then open it in write mode
-			int fd = open(MAIN_FIFO_NAME, O_WRONLY);
-			if (fd < 0)
-			{
-				perror("Error occured while opening named pipe for reading!\n");
-				exit(1);
-			}
-			// Write data to the named pipe
-			int n = write(fd, buffer, strlen(buffer));
-			if (n < 0)
-			{
-				perror("Error writing to named pipe");
-				exit(1);
-			}
-
-			// Create a new thread for that client
-			pthread_t thread;
-			pthread_create(&thread, NULL, readClientThread, NULL);
-			add_item(threadList, &thread);
+			continue;
 		}
+
+		// A client wrote 'connect' to the pipe.
+		printf("Client wrote: %s\n", buffer);
+
+		// Create a named pipe for that client
+		int size = log10(uniqueId) + 1;
+		char pipeName[size];
+		sprintf(pipeName, "%d", uniqueId++);
+
+		int result = mkfifo(pipeName, 0666);
+		if (result < 0)
+		{
+			perror("Error occured while creating named pipe!\n");
+			exit(EXIT_FAILURE);
+		}
+
+		// Send that pipe name back to the client to listen
+		printf("New Pipe Name: %s\n", pipeName);
+
+		// First close the named pipe that has been opened for reading
+		close(fd);
+
+		// Then open it in write mode
+		fd = open(MAIN_FIFO_NAME, O_WRONLY);
+		if (fd < 0)
+		{
+			perror("Error occured while opening named pipe for reading!\n");
+			exit(1);
+		}
+
+		// Write data to the named pipe
+		int n = write(fd, pipeName, strlen(pipeName));
+		if (n < 0)
+		{
+			perror("Error writing to named pipe!\n");
+			exit(1);
+		}
+
+		// Finished writing. Close the named pipe.
+		close(fd);
+
+		// Create a new thread for that client
+		pthread_t thread;
+		pthread_create(&thread, NULL, readClientThread, NULL);
+		add_item(threadList, &thread);
 	}
 
 	// Close the named pipe
 	close(fd);
 }
 
-void readClientThread()
+/**
+ * Constantly read the given pipe for inputs. This function should be called for each client that
+ * connects to this service.
+ */
+void readClientThread(char *pipeName)
 {
-}
+	while (TRUE)
+	{
+		// Open the unique named pipe for reading
+		int fd = open(pipeName, O_RDONLY);
+		if (fd < 0)
+		{
+			perror("Error occured while opening named pipe for reading!\n");
+			continue;
+		}
 
-void uniquePipeName(char *pipeName)
-{
-	int numberOfThread = threadList->size;
-	sprintf(pipeName, "%d", numberOfThread);
-	pipeName[1] = '\0';
+		// Read data from the unique named pipe
+		char buffer[MAX_BUFFER_LENGTH];
+		int n = read(fd, buffer, MAX_BUFFER_LENGTH);
+		if (n < 0)
+		{
+			perror("Error occured while reading from named pipe!\n");
+			continue;
+		}
+
+		printf("%s: %s", pipeName, buffer);
+	}
 }
