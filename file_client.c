@@ -4,6 +4,8 @@
 #include <string.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <readline/readline.h>
 
 #define TRUE 1
@@ -13,8 +15,9 @@
 #define NUMBER_OF_TOKENS 2
 #define INPUT_STR "Your Input -> "
 
-void readUserInput();
-void readServiceInput();
+void* readUserInput();
+void* readServiceInput();
+void handleUserInputs(char *userInput);
 int equals(char *, char *);
 int startsWith(char *, char *);
 int readFromPipe(char *, char *);
@@ -31,13 +34,6 @@ int main(int argc, char const *argv[])
     serviceThreadControl = TRUE;
 
     // Main named pipe to connect service (manager)
-    int result = mkfifo(MAIN_FIFO_NAME, 0666);
-    if (result < 0)
-    {
-        perror("Error occured while creating named pipe!\n");
-        exit(EXIT_FAILURE);
-    }
-
     char *connect = "connect";
     int status = writeToPipe(connect, MAIN_FIFO_NAME);
     if (status != TRUE)
@@ -81,9 +77,9 @@ int main(int argc, char const *argv[])
     return 0;
 }
 
-void readUserInput()
+void* readUserInput()
 {
-    char userInput[MAX_BUFFER_LENGTH];
+    char *userInput;
 
     while (userThreadControl)
     {
@@ -100,7 +96,7 @@ void readUserInput()
     }
 }
 
-void readServiceInput() {}
+void* readServiceInput() {}
 
 /**
  * @brief Return true if str1 equals to str2

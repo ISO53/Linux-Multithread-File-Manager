@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -25,12 +27,16 @@ int add_item(ArrayList *list, void *item);
 void remove_item(ArrayList *list, int index);
 void *get_item(ArrayList *list, int index);
 
-void readMainNamedPipe();
-void readClientThread(char *pipeName);
+void* readMainNamedPipe();
+void* readClientThread(char *);
+int tokenizeInput(char *, char **, int);
+int equals(char *, char *);
+int writeToPipe(char *, char *);
+int readFromPipe(char *, char *);
 
 ArrayList *threadList;
 ArrayList *fileList;
-unsigned long uniqueId;
+int uniqueId;
 
 int main(int argc, char const *argv[])
 {
@@ -38,6 +44,9 @@ int main(int argc, char const *argv[])
 	threadList = create_list(MAX_THREAD_CAPACITY);
 	fileList = create_list(MAX_FILE_CAPACITY);
 	uniqueId = 0;
+
+	// Delete the named pipe if it has been created previosuly
+	unlink(MAIN_FIFO_NAME);
 
 	// Main named pipe for newly created processes to connect
 	int result = mkfifo(MAIN_FIFO_NAME, 0666);
@@ -119,7 +128,7 @@ void *get_item(ArrayList *list, int index)
  * another pipe just for that process and start listen that pipe on another thread.
  *
  */
-void readMainNamedPipe()
+void* readMainNamedPipe()
 {
 	while (TRUE)
 	{
@@ -156,7 +165,7 @@ void readMainNamedPipe()
 
 		// Create a new thread for that client
 		pthread_t thread;
-		pthread_create(&thread, NULL, readClientThread, NULL);
+		pthread_create(&thread, NULL, readClientThread(pipeName), NULL);
 		add_item(threadList, &thread);
 	}
 }
@@ -167,7 +176,7 @@ void readMainNamedPipe()
  *
  * @param pipeName
  */
-void readClientThread(char *pipeName)
+void* readClientThread(char *pipeName)
 {
 	while (TRUE)
 	{
