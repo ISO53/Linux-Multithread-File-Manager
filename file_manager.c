@@ -47,12 +47,20 @@ int main(int argc, char const *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	while (TRUE)
-	{
-	}
+	// Listen main pipe in another thread
+	pthread_t mainThread;
+	pthread_create(&mainThread, NULL, readMainNamedPipe, NULL);
 
-	// pthread_t mainThread;
-	// pthread_create(&mainThread, NULL, listenUntilExit, NULL);
+	// ARADAKİ İŞLEMŞLER
+	// adsa
+	// asdasd
+
+	pthread_join(mainThread, NULL);
+	for (int i = 0; i < threadList->size; i++)
+	{
+		pthread_t tempThread = *(pthread_t *)get_item(threadList, i);
+		pthread_join(tempThread, NULL);
+	}
 
 	destroy_list(threadList);
 	destroy_list(fileList);
@@ -109,31 +117,18 @@ void *get_item(ArrayList *list, int index)
 /**
  * @brief Constantly read the main named pipe to check if any process trying to connect. If so, create
  * another pipe just for that process and start listen that pipe on another thread.
- * 
+ *
  */
 void readMainNamedPipe()
 {
-	// Open the main named pipe for reading
-	int fd = open(MAIN_FIFO_NAME, O_RDONLY);
-	if (fd < 0)
-	{
-		perror("Error occured while opening named pipe for reading!\n");
-		exit(1);
-	}
-
 	while (TRUE)
 	{
 		// Read data from the main named pipe
 		char buffer[MAX_BUFFER_LENGTH];
-		int n = read(fd, buffer, MAX_BUFFER_LENGTH);
-		if (n < 0)
-		{
-			perror("Error occured while reading from named pipe!\n");
-			return EXIT_FAILURE;
-		}
+		readFromPipe(buffer, MAIN_FIFO_NAME);
 
 		// Rewing if there isn't a client trying to connect
-		if (strcmp(buffer, "connect") != 0)
+		if (!equals(buffer, "connect"))
 		{
 			continue;
 		}
@@ -156,43 +151,21 @@ void readMainNamedPipe()
 		// Send that pipe name back to the client to listen
 		printf("New Pipe Name: %s\n", pipeName);
 
-		// First close the named pipe that has been opened for reading
-		close(fd);
-
-		// Then open it in write mode
-		fd = open(MAIN_FIFO_NAME, O_WRONLY);
-		if (fd < 0)
-		{
-			perror("Error occured while opening named pipe for reading!\n");
-			exit(1);
-		}
-
 		// Write data to the named pipe
-		int n = write(fd, pipeName, strlen(pipeName));
-		if (n < 0)
-		{
-			perror("Error writing to named pipe!\n");
-			exit(1);
-		}
-
-		// Finished writing. Close the named pipe.
-		close(fd);
+		writeToPipe(pipeName, MAIN_FIFO_NAME);
 
 		// Create a new thread for that client
 		pthread_t thread;
 		pthread_create(&thread, NULL, readClientThread, NULL);
 		add_item(threadList, &thread);
 	}
-
-	// Close the named pipe
-	close(fd);
 }
 
 /**
  * @brief Constantly read the given pipe for inputs. This function should be called for each client that
  * connects to this service.
- * 
- * @param pipeName 
+ *
+ * @param pipeName
  */
 void readClientThread(char *pipeName)
 {
@@ -231,14 +204,96 @@ void readClientThread(char *pipeName)
  */
 int tokenizeInput(char *input, char **tokens, int length)
 {
-    int counter = 0;
-    char *temp = strtok(input, " ");
+	int counter = 0;
+	char *temp = strtok(input, " ");
 
-    while (temp != NULL && counter < length)
-    {
-        tokens[counter++] = temp;
-        temp = strtok(NULL, " ");
-    }
+	while (temp != NULL && counter < length)
+	{
+		tokens[counter++] = temp;
+		temp = strtok(NULL, " ");
+	}
 
-    return counter;
+	return counter;
+}
+
+/**
+ * @brief Return true if str1 equals to str2
+ *
+ * @param str1
+ * @param str2
+ * @return int
+ */
+int equals(char *str1, char *str2)
+{
+	return strcmp(str1, str2) == 0;
+}
+
+/**
+ * @brief Writes given string to given pipe
+ *
+ * @param str
+ * @param pipeName
+ * @return int
+ */
+int writeToPipe(char *str, char *pipeName)
+{
+	// Open the pipe for writing
+	int fd = open(pipeName, O_WRONLY);
+	if (fd < 0)
+	{
+		perror("Error occured while opening named pipe for reading!\n");
+		return FALSE;
+	}
+
+	// Write to pipe
+	int n = write(fd, str, strlen(str));
+	if (n < 0)
+	{
+		perror("Error writing to named pipe!\n");
+		return FALSE;
+	}
+
+	// Finished writing. Close the pipe.
+	close(fd);
+
+	return TRUE;
+}
+
+/**
+ * @brief Reads given pipe and writes input to given string
+ *
+ * @param str
+ * @param pipeName
+ * @return int
+ */
+int readFromPipe(char *str, char *pipeName)
+{
+	// Open the pipe for reading
+	int fd = open(pipeName, O_RDONLY);
+	if (fd < 0)
+	{
+		perror("Error occured while opening named pipe for reading!\n");
+		return FALSE;
+	}
+
+	// Start reading the pipe
+	char buffer[MAX_BUFFER_LENGTH];
+	int n = read(fd, buffer, MAX_BUFFER_LENGTH);
+	if (n < 0)
+	{
+		perror("Error occured while reading from named pipe!\n");
+		return FALSE;
+	}
+
+	// If data in pipe changed
+	if (strcmp(buffer, "connect") != 0)
+	{
+		// We have a unique pipe name!
+		strcpy(pipeName, buffer);
+	}
+
+	// Finished writing. Close the named pipe.
+	close(fd);
+
+	return TRUE;
 }

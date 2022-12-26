@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <fcntl.h>
+#include <time.h>
 #include <readline/readline.h>
 
 #define TRUE 1
@@ -13,14 +14,22 @@
 #define INPUT_STR "Your Input -> "
 
 void readUserInput();
-void readServiceMessage();
+void readServiceInput();
 int equals(char *, char *);
 int startsWith(char *, char *);
+int readFromPipe(char *, char *);
+int writeToPipe(char *, char *);
 
 char *pipeName;
+int userThreadControl;
+int serviceThreadControl;
 
 int main(int argc, char const *argv[])
 {
+    // Infinite loop control for threads
+    userThreadControl = TRUE;
+    serviceThreadControl = TRUE;
+
     // Main named pipe to connect service (manager)
     int result = mkfifo(MAIN_FIFO_NAME, 0666);
     if (result < 0)
@@ -31,27 +40,23 @@ int main(int argc, char const *argv[])
 
     char *connect = "connect";
     int status = writeToPipe(connect, MAIN_FIFO_NAME);
-    if (status != TRUE) {
+    if (status != TRUE)
+    {
         exit(EXIT_FAILURE);
     }
 
-    
-
-    // Start reading the main pipe for upcoming new pipe name
-    char buffer[MAX_BUFFER_LENGTH];
-    int n = read(fd, buffer, MAX_BUFFER_LENGTH);
-    if (n < 0)
+    char readedData[MAX_BUFFER_LENGTH];
+    while (!equals(readedData, "connect"))
     {
-        perror("Error occured while reading from named pipe!\n");
-        return EXIT_FAILURE;
+        // Start reading the main pipe for upcoming new pipe name
+        readFromPipe(readedData, MAIN_FIFO_NAME);
+
+        // Sleep for 50ms
+        usleep(50000);
     }
 
-    // If data in pipe changed
-    if (strcmp(buffer, "connect") != 0)
-    {
-        // We have a unique pipe name!
-        strcpy(pipeName, buffer);
-    }
+    // We have a unique pipe name!
+    strcpy(pipeName, readedData);
 
     // Unique pipe to connect service (manager)
     int result = mkfifo(pipeName, 0666);
@@ -61,6 +66,18 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
+    pthread_t userInputThread, serviceInputThread;
+
+    // Create two threads
+    pthread_create(&userInputThread, NULL, readUserInput, NULL);
+    pthread_create(&serviceInputThread, NULL, readServiceInput, NULL);
+
+    // Wait for the threads to finish
+    pthread_join(userInputThread, NULL);
+    pthread_join(serviceInputThread, NULL);
+
+    printf("Program finished!\n");
+
     return 0;
 }
 
@@ -68,7 +85,7 @@ void readUserInput()
 {
     char userInput[MAX_BUFFER_LENGTH];
 
-    while (TRUE)
+    while (userThreadControl)
     {
         userInput = readline(INPUT_STR);
 
@@ -83,7 +100,7 @@ void readUserInput()
     }
 }
 
-void readServiceMessage() {}
+void readServiceInput() {}
 
 /**
  * @brief Return true if str1 equals to str2
@@ -109,6 +126,11 @@ int startsWith(char *str1, char *str2)
     return strncmp(str1, str2, strlen(str2)) == 0;
 }
 
+/**
+ * @brief Handles user input readed from stdin (terminal)
+ * 
+ * @param userInput 
+ */
 void handleUserInputs(char *userInput)
 {
 
@@ -124,8 +146,11 @@ void handleUserInputs(char *userInput)
     else if (startsWith(userInput, "write"))
     {
     }
-    else if (startsWith(userInput, "exit"))
+    else if (equals(userInput, "exit"))
     {
+        writeToPipe("i want to exit\n", pipeName);
+        userThreadControl = FALSE;
+        return;
     }
     else
     {
@@ -135,10 +160,10 @@ void handleUserInputs(char *userInput)
 
 /**
  * @brief Writes given string to given pipe
- * 
- * @param str 
- * @param pipeName 
- * @return int 
+ *
+ * @param str
+ * @param pipeName
+ * @return int
  */
 int writeToPipe(char *str, char *pipeName)
 {
@@ -166,12 +191,12 @@ int writeToPipe(char *str, char *pipeName)
 
 /**
  * @brief Reads given pipe and writes input to given string
- * 
- * @param str 
- * @param pipeName 
- * @return int 
+ *
+ * @param str
+ * @param pipeName
+ * @return int
  */
-int writeToPipe(char *str, char *pipeName)
+int readFromPipe(char *str, char *pipeName)
 {
     // Open the pipe for reading
     int fd = open(pipeName, O_RDONLY);
@@ -202,4 +227,3 @@ int writeToPipe(char *str, char *pipeName)
 
     return TRUE;
 }
-
