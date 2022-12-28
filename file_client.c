@@ -11,9 +11,10 @@
 #define TRUE 1
 #define FALSE 0
 #define MAIN_FIFO_NAME "MAIN_FIFO"
-#define MAX_BUFFER_LENGTH 100
+#define MAX_BUFFER_LENGTH 128
 #define NUMBER_OF_TOKENS 2
 #define INPUT_STR "Your Input -> "
+#define CONNECT "connect"
 
 void* readUserInput();
 void* readServiceInput();
@@ -23,7 +24,7 @@ int startsWith(char *, char *);
 int readFromPipe(char *, char *);
 int writeToPipe(char *, char *);
 
-char *pipeName;
+char pipeName[MAX_BUFFER_LENGTH];
 int userThreadControl;
 int serviceThreadControl;
 
@@ -34,33 +35,16 @@ int main(int argc, char const *argv[])
     serviceThreadControl = TRUE;
 
     // Main named pipe to connect service (manager)
-    char *connect = "connect";
-    int status = writeToPipe(connect, MAIN_FIFO_NAME);
+    int status = writeToPipe(CONNECT, MAIN_FIFO_NAME);
     if (status != TRUE)
     {
         exit(EXIT_FAILURE);
     }
 
-    char readedData[MAX_BUFFER_LENGTH];
-    while (!equals(readedData, "connect"))
-    {
-        // Start reading the main pipe for upcoming new pipe name
-        readFromPipe(readedData, MAIN_FIFO_NAME);
+    // Wait for new unique pipe name from manager
+    readFromPipe(pipeName, MAIN_FIFO_NAME);
 
-        // Sleep for 50ms
-        usleep(50000);
-    }
-
-    // We have a unique pipe name!
-    strcpy(pipeName, readedData);
-
-    // Unique pipe to connect service (manager)
-    int result = mkfifo(pipeName, 0666);
-    if (result < 0)
-    {
-        perror("Error occured while creating named pipe!\n");
-        exit(EXIT_FAILURE);
-    }
+    printf("We have a unique pipe name-> %s\n", pipeName);    
 
     pthread_t userInputThread, serviceInputThread;
 
@@ -130,21 +114,26 @@ int startsWith(char *str1, char *str2)
 void handleUserInputs(char *userInput)
 {
 
+    // create filename
     if (startsWith(userInput, "create"))
     {
     }
+    // delete filename
     else if (startsWith(userInput, "delete"))
     {
     }
+    // read filename
     else if (startsWith(userInput, "read"))
     {
     }
+    // write filename string
     else if (startsWith(userInput, "write"))
     {
     }
+    // exit
     else if (equals(userInput, "exit"))
     {
-        writeToPipe("i want to exit\n", pipeName);
+        writeToPipe("exit\n", pipeName);
         userThreadControl = FALSE;
         return;
     }
@@ -203,19 +192,11 @@ int readFromPipe(char *str, char *pipeName)
     }
 
     // Start reading the pipe
-    char buffer[MAX_BUFFER_LENGTH];
-    int n = read(fd, buffer, MAX_BUFFER_LENGTH);
+    int n = read(fd, str, MAX_BUFFER_LENGTH);
     if (n < 0)
     {
         perror("Error occured while reading from named pipe!\n");
         return FALSE;
-    }
-
-    // If data in pipe changed
-    if (strcmp(buffer, "connect") != 0)
-    {
-        // We have a unique pipe name!
-        strcpy(pipeName, buffer);
     }
 
     // Finished writing. Close the named pipe.
