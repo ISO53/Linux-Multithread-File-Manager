@@ -6,19 +6,20 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 #include <readline/readline.h>
 
 #define TRUE 1
 #define FALSE 0
 #define MAIN_FIFO_NAME "MAIN_FIFO"
 #define MAX_BUFFER_LENGTH 128
-#define NUMBER_OF_TOKENS 2
-#define INPUT_STR "Your Input -> "
+#define INPUT_STR "\nYour Input -> "
 #define CONNECT "connect"
 
 void* readUserInput();
-void* readServiceInput();
-void handleUserInputs(char *userInput);
+void* readServiceInputs();
+void handleUserInputs(char *);
+void handleServiceInputs(char *);
 int equals(char *, char *);
 int startsWith(char *, char *);
 int readFromPipe(char *, char *);
@@ -35,22 +36,19 @@ int main(int argc, char const *argv[])
     serviceThreadControl = TRUE;
 
     // Main named pipe to connect service (manager)
-    int status = writeToPipe(CONNECT, MAIN_FIFO_NAME);
-    if (status != TRUE)
-    {
-        exit(EXIT_FAILURE);
-    }
+    writeToPipe(CONNECT, MAIN_FIFO_NAME);
 
     // Wait for new unique pipe name from manager
     readFromPipe(pipeName, MAIN_FIFO_NAME);
 
-    printf("We have a unique pipe name-> %s\n", pipeName);    
+    printf("We have a unique pipe name-> %s\n", pipeName);
+    //writeToPipe("something", pipeName);
 
     pthread_t userInputThread, serviceInputThread;
 
     // Create two threads
     pthread_create(&userInputThread, NULL, readUserInput, NULL);
-    pthread_create(&serviceInputThread, NULL, readServiceInput, NULL);
+    pthread_create(&serviceInputThread, NULL, readServiceInputs, NULL);
 
     // Wait for the threads to finish
     pthread_join(userInputThread, NULL);
@@ -61,6 +59,11 @@ int main(int argc, char const *argv[])
     return 0;
 }
 
+/**
+ * @brief Reads terminal concurrently. If user has entered any input, handles it.
+ *
+ * @return void*
+ */
 void* readUserInput()
 {
     char *userInput;
@@ -69,9 +72,8 @@ void* readUserInput()
     {
         userInput = readline(INPUT_STR);
 
-        if (strlen(userInput) < 0)
+        if (userInput == NULL || strlen(userInput) <= 0)
         {
-            // User didn't enter any input. Carry on to the endless loop.
             continue;
         }
 
@@ -80,7 +82,32 @@ void* readUserInput()
     }
 }
 
-void* readServiceInput() {}
+/**
+ * @brief Reads terminal concurrently. If user has entered any input, handles it.
+ *
+ * @return void*
+ */
+void* readServiceInputs()
+{
+    char *serviceInput;
+
+    while (serviceThreadControl)
+    {
+        printf("pipeName: %s\n", pipeName);
+        int status = readFromPipe(serviceInput, pipeName);
+        
+        if (status < 0) {
+            continue;
+        }
+
+        if (serviceInput == NULL || strlen(serviceInput) <= 0) {
+            continue;
+        }
+
+        // Manager sent an input! Input is in {serviceInput}.
+        handleServiceInputs(serviceInput);
+    }
+}
 
 /**
  * @brief Return true if str1 equals to str2
@@ -117,6 +144,8 @@ void handleUserInputs(char *userInput)
     // create filename
     if (startsWith(userInput, "create"))
     {
+        writeToPipe("create something", pipeName);
+        return;
     }
     // delete filename
     else if (startsWith(userInput, "delete"))
@@ -133,14 +162,25 @@ void handleUserInputs(char *userInput)
     // exit
     else if (equals(userInput, "exit"))
     {
-        writeToPipe("exit\n", pipeName);
+        writeToPipe("exit", pipeName);
         userThreadControl = FALSE;
+        serviceThreadControl = FALSE;
         return;
     }
     else
     {
         printf("Wrong input! Try Again.\n");
     }
+}
+
+/**
+ * @brief Handles service input readed from named pipe
+ * 
+ * @param serviceInput
+ */
+void handleServiceInputs(char *serviceInput)
+{
+    printf("Message came from manager: %s", serviceInput);
 }
 
 /**
@@ -156,20 +196,22 @@ int writeToPipe(char *str, char *pipeName)
     int fd = open(pipeName, O_WRONLY);
     if (fd < 0)
     {
-        perror("Error occured while opening named pipe for reading!\n");
+        printf("Error occured while opening named pipe [%s] for writing!\n", pipeName);
+        perror("");
         return FALSE;
     }
 
     // Write to pipe
-    int n = write(fd, str, strlen(str));
+    ftruncate(fd, 0);
+    int n = write(fd, str, strlen(str) + 1);
     if (n < 0)
     {
         perror("Error writing to named pipe!\n");
         return FALSE;
     }
 
-    // Finished writing. Close the pipe.
-    close(fd);
+    // Finished writing. Close the named pipe.
+	close(fd);
 
     return TRUE;
 }
@@ -188,15 +230,16 @@ int readFromPipe(char *str, char *pipeName)
     if (fd < 0)
     {
         perror("Error occured while opening named pipe for reading!\n");
-        return FALSE;
+        return fd;
     }
 
     // Start reading the pipe
-    int n = read(fd, str, MAX_BUFFER_LENGTH);
+    int n = read(fd, str, MAX_BUFFER_LENGTH - 1);
     if (n < 0)
     {
+        //printf("errno: %d\n", errno);
         perror("Error occured while reading from named pipe!\n");
-        return FALSE;
+        return n;
     }
 
     // Finished writing. Close the named pipe.

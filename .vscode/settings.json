@@ -1,5 +1,12 @@
 {
 	"files.associations": {
 		"stdlib.h": "c"
-	}
+	},
+	"makefile.launchConfigurations": [
+		{
+			"cwd": "/home/iso/Desktop/OPSYS-Project-2",
+			"binaryPath": "/home/iso/Desktop/OPSYS-Project-2/client",
+			"binaryArgs": []
+		}
+	]
 }

@@ -21,7 +21,7 @@ typedef struct
 	int front;
 	int rear;
 	int size;
-	char *data[MAX_QUEUE_SIZE];
+	char data[MAX_QUEUE_SIZE][MAX_BUFFER_LENGTH];
 } Queue;
 Queue *create_queue();
 int isEmpty(Queue *queue);
@@ -43,29 +43,31 @@ void *get_item(ArrayList *, int);
 
 void *readMainNamedPipe();
 void *workerThread();
-void *readerThread(char *);
+void *readerThread(void *);
 void createWorkerThreads(int);
 int tokenizeInput(char *, char **, int);
 int equals(char *, char *);
 int writeToPipe(char *, char *);
 int readFromPipe(char *, char *);
 
-ArrayList *workerThreadList;
-ArrayList *readerThreadList;
+pthread_t workerThreadList[MAX_THREAD_CAPACITY];
+pthread_t readerThreadList[MAX_THREAD_CAPACITY];
 ArrayList *fileList;
 Queue *workQueue;
 int currentThreadIndex;
 
+/**
+ * @brief Main function
+ *
+ * @param argc
+ * @param argv
+ * @return int
+ */
 int main(int argc, char const *argv[])
 {
-	workerThreadList = create_list(MAX_THREAD_CAPACITY);
-	readerThreadList = create_list(MAX_THREAD_CAPACITY);
 	fileList = create_list(MAX_FILE_CAPACITY);
 	workQueue = create_queue();
 	currentThreadIndex = 1;
-
-	// Create worker threads for clients
-	createWorkerThreads(MAX_THREAD_CAPACITY);
 
 	// Delete the main named pipe if it has been created previosuly
 	unlink(MAIN_FIFO_NAME);
@@ -82,22 +84,20 @@ int main(int argc, char const *argv[])
 	pthread_t mainThread;
 	pthread_create(&mainThread, NULL, readMainNamedPipe, NULL);
 
+	// Create worker and reader threads for clients
+	createWorkerThreads(MAX_THREAD_CAPACITY);
+
 	// ARADAKİ İŞLEMŞLER
 	// adsa
 	// asdasd
 
-	pthread_join(mainThread, NULL);
 	for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
 	{
-		pthread_t tempWorkerThread = *(pthread_t *)(get_item(workerThreadList, i));
-		pthread_join(tempWorkerThread, NULL);
-
-		pthread_t tempReaderThread = *(pthread_t *)(get_item(readerThreadList, i));
-		pthread_join(tempReaderThread, NULL);
+		pthread_join(workerThreadList[i], NULL);
+		pthread_join(readerThreadList[i], NULL);
 	}
+	pthread_join(mainThread, NULL);
 
-	destroy_list(workerThreadList);
-	destroy_list(readerThreadList);
 	destroy_list(fileList);
 
 	unlink(MAIN_FIFO_NAME);
@@ -155,7 +155,7 @@ void *get_item(ArrayList *list, int index)
 Queue *create_queue()
 {
 	Queue *queue = (Queue *)malloc(sizeof(Queue));
-	queue->front = queue->rear = NULL;
+	queue->front = queue->rear = -1;
 	queue->size = 0;
 	return queue;
 }
@@ -177,7 +177,8 @@ int enqueue(Queue *queue, char *str)
 		return -1;
 	}
 	queue->rear = (queue->rear + 1) % MAX_QUEUE_SIZE;
-	queue->data[queue->rear] = str;
+	// queue->data[queue->rear] = str;
+	strcpy(queue->data[queue->rear], str);
 	queue->size++;
 }
 
@@ -185,7 +186,7 @@ char *dequeue(Queue *queue)
 {
 	if (isEmpty(queue))
 	{
-		return -1;
+		return NULL;
 	}
 	queue->front = (queue->front + 1) % MAX_QUEUE_SIZE;
 	char *tempData = queue->data[queue->front];
@@ -194,20 +195,27 @@ char *dequeue(Queue *queue)
 }
 //************************************* Queue Functions Ends *************************************
 
+/**
+ * @brief Creates reader and worker threads that reads client pipes concurrently. Every input that
+ * has sent by client added to the queue by reader threads. Worker threads reads queue concurrently.
+ *
+ * @param maxThreadcapacity
+ * @return void*
+ */
 void createWorkerThreads(int maxThreadCapacity)
 {
 	for (int i = 0; i < maxThreadCapacity; i++)
 	{
 		// Create unique name for every thread
-		int size = log10(i + 1) + 1;
+		int size = log10(__INT_MAX__) + 5 + 1;
 		char pipeName[size];
-		sprintf(pipeName, "pipe_%d", (i + 1));
+		sprintf(pipeName, "pipe%d", (i + 1));
 
 		// Create a unique pipe with that name
 		int result = mkfifo(pipeName, 0666);
 		if (result < 0)
 		{
-			perror("Error occured while creating named pipe! Trying to delete file...\n");
+			// There maybe a pipe already. Delete it and create it again.
 			unlink(pipeName);
 
 			// Now let's try again
@@ -217,17 +225,10 @@ void createWorkerThreads(int maxThreadCapacity)
 				perror("Something wrong!\n");
 				exit(EXIT_FAILURE);
 			}
-			printf("Error prevented.\n");
 		}
 
-		// Create a new worker
-		pthread_t var_workerThread;
-		pthread_create(&var_workerThread, NULL, workerThread, NULL);
-		add_item(workerThreadList, &var_workerThread);
-
-		// Create a new reader thread
-		pthread_t var_readerThread;
-		pthread_create(&var_readerThread, NULL, readerThread(pipeName), NULL);
+		// Create a new worker and reader thread
+		pthread_create(&workerThreadList[i], NULL, workerThread, NULL);
 	}
 }
 
@@ -242,6 +243,18 @@ void *workerThread()
 	while (TRUE)
 	{
 		// burada mutex lock kullanmak lazım aga
+
+		// Get a work from queue if exists
+		char *work = dequeue(workQueue);
+
+		if (work == NULL)
+		{
+			// Sleep for 100ms then rewind
+			usleep(100000);
+			continue;
+		}
+
+		printf("Work is: %s\n", work);
 	}
 }
 
@@ -252,20 +265,32 @@ void *workerThread()
  * @param pipeName
  * @return void*
  */
-void *readerThread(char *pipeName)
+void *readerThread(void *param)
 {
+	char *pipeName = (char *)param;
+	printf("pipeName: %s\n", pipeName);
+	exit(1);
+
 	while (TRUE)
 	{
 		// Read data from the unique named pipe
 		char buffer[MAX_BUFFER_LENGTH];
 		readFromPipe(buffer, pipeName);
 
+		if (buffer == NULL || strlen(buffer) <= 0)
+		{
+			continue;
+		}
+
 		printf("Data read from the pipe named [%s] is [%s].\n", pipeName, buffer);
 
-		// Add command (buffer) to command queue for worker threads with pipeName attached to command
-		strcat(pipeName, "-");
-		strcat(pipeName, buffer);
-		enqueue(workQueue, pipeName);
+		// Add command (buffer) to command queue for worker threads with pipeName attached to it
+		int size = strlen(pipeName) + strlen(buffer) + 2;
+		char commandWithPipeName[size];
+		strcpy(commandWithPipeName, pipeName);
+		strcat(commandWithPipeName, "_");
+		strcat(commandWithPipeName, buffer);
+		enqueue(workQueue, commandWithPipeName);
 	}
 }
 
@@ -283,6 +308,11 @@ void *readMainNamedPipe()
 		char buffer[MAX_BUFFER_LENGTH];
 		readFromPipe(buffer, MAIN_FIFO_NAME);
 
+		if (buffer == NULL || strlen(buffer) <= 0)
+		{
+			continue;
+		}
+
 		// A client wrote 'connect' to the pipe.
 		printf("Client wrote: %s\n", buffer);
 
@@ -290,15 +320,20 @@ void *readMainNamedPipe()
 		if (currentThreadIndex > MAX_THREAD_CAPACITY)
 		{
 			// There are no available thread
+			printf("There are no available threads.\n");
 			continue;
 		}
 
 		// Available thread pipe name
-		char pipeName[6];
-		sprintf(pipeName, "pipe_%d", currentThreadIndex++);
+		int size = log10(__INT_MAX__) + 4 + 1;
+		char pipeName[size];
+		sprintf(pipeName, "pipe%d", currentThreadIndex++);
 
 		// Send that pipe name to client
 		writeToPipe(pipeName, MAIN_FIFO_NAME);
+
+		// Create a reader thread for that client
+		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL, readerThread, &pipeName);
 	}
 }
 
@@ -356,7 +391,8 @@ int writeToPipe(char *str, char *pipeName)
 	}
 
 	// Write to pipe
-	int n = write(fd, str, strlen(str));
+	ftruncate(fd, 0);
+	int n = write(fd, str, strlen(str) + 1);
 	if (n < 0)
 	{
 		perror("Error writing to named pipe!\n");
