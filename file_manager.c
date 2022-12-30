@@ -267,9 +267,11 @@ void *workerThread()
  */
 void *readerThread(void *param)
 {
-	char *pipeName = (char *)param;
+	char *tempPipeName = (char *)param;
+	char pipeName[MAX_BUFFER_LENGTH];
+	strcpy(pipeName, tempPipeName);
 	printf("pipeName: %s\n", pipeName);
-	exit(1);
+	free(param);
 
 	while (TRUE)
 	{
@@ -326,14 +328,14 @@ void *readMainNamedPipe()
 
 		// Available thread pipe name
 		int size = log10(__INT_MAX__) + 4 + 1;
-		char pipeName[size];
+		char *pipeName = (char *)malloc(sizeof(char) * size + 1);
 		sprintf(pipeName, "pipe%d", currentThreadIndex++);
 
 		// Send that pipe name to client
 		writeToPipe(pipeName, MAIN_FIFO_NAME);
 
 		// Create a reader thread for that client
-		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL, readerThread, &pipeName);
+		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL, readerThread, (void *)pipeName);
 	}
 }
 

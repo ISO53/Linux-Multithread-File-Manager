@@ -16,8 +16,8 @@
 #define INPUT_STR "\nYour Input -> "
 #define CONNECT "connect"
 
-void* readUserInput();
-void* readServiceInputs();
+void *readUserInput();
+void *readServiceInputs();
 void handleUserInputs(char *);
 void handleServiceInputs(char *);
 int equals(char *, char *);
@@ -42,7 +42,7 @@ int main(int argc, char const *argv[])
     readFromPipe(pipeName, MAIN_FIFO_NAME);
 
     printf("We have a unique pipe name-> %s\n", pipeName);
-    //writeToPipe("something", pipeName);
+    // writeToPipe("something", pipeName);
 
     pthread_t userInputThread, serviceInputThread;
 
@@ -64,7 +64,7 @@ int main(int argc, char const *argv[])
  *
  * @return void*
  */
-void* readUserInput()
+void *readUserInput()
 {
     char *userInput;
 
@@ -87,25 +87,29 @@ void* readUserInput()
  *
  * @return void*
  */
-void* readServiceInputs()
+void *readServiceInputs()
 {
-    char *serviceInput;
+    char serviceInput[MAX_BUFFER_LENGTH];
 
     while (serviceThreadControl)
     {
-        printf("pipeName: %s\n", pipeName);
         int status = readFromPipe(serviceInput, pipeName);
-        
-        if (status < 0) {
+
+        if (status < 0)
+        {
             continue;
         }
 
-        if (serviceInput == NULL || strlen(serviceInput) <= 0) {
+        if (serviceInput == NULL || strlen(serviceInput) <= 0)
+        {
             continue;
         }
+
+        char *sendInput = (char *)malloc(sizeof(char) * MAX_BUFFER_LENGTH + 1);
+        strcpy(sendInput, serviceInput);
 
         // Manager sent an input! Input is in {serviceInput}.
-        handleServiceInputs(serviceInput);
+        handleServiceInputs(sendInput);
     }
 }
 
@@ -135,8 +139,8 @@ int startsWith(char *str1, char *str2)
 
 /**
  * @brief Handles user input readed from stdin (terminal)
- * 
- * @param userInput 
+ *
+ * @param userInput
  */
 void handleUserInputs(char *userInput)
 {
@@ -175,12 +179,15 @@ void handleUserInputs(char *userInput)
 
 /**
  * @brief Handles service input readed from named pipe
- * 
+ *
  * @param serviceInput
  */
 void handleServiceInputs(char *serviceInput)
 {
-    printf("Message came from manager: %s", serviceInput);
+    char input[MAX_BUFFER_LENGTH];
+    strcpy(input, serviceInput);
+    free(serviceInput);
+    printf("Message came from manager: %s", input);
 }
 
 /**
@@ -211,7 +218,7 @@ int writeToPipe(char *str, char *pipeName)
     }
 
     // Finished writing. Close the named pipe.
-	close(fd);
+    close(fd);
 
     return TRUE;
 }
@@ -234,13 +241,16 @@ int readFromPipe(char *str, char *pipeName)
     }
 
     // Start reading the pipe
-    int n = read(fd, str, MAX_BUFFER_LENGTH - 1);
+
+    char temp[MAX_BUFFER_LENGTH];
+    int n = read(fd, temp, MAX_BUFFER_LENGTH - 1);
     if (n < 0)
     {
-        //printf("errno: %d\n", errno);
+        // printf("errno: %d\n", errno);
         perror("Error occured while reading from named pipe!\n");
         return n;
     }
+    strcpy(str, temp);
 
     // Finished writing. Close the named pipe.
     close(fd);
