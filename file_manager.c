@@ -120,11 +120,12 @@ ArrayList *create_list(int maxCapacity)
 	ArrayList *list = malloc(sizeof(ArrayList));
 	list->size = 0;
 	list->capacity = maxCapacity;
-	list->items = malloc(sizeof(char *) * list->capacity);
+	list->items = calloc(list->capacity, sizeof(char *));
 
 	for (int i = 0; i < list->capacity; i++)
 	{
-		list->items[i] = NULL;
+		list->items[i] = calloc(MAX_BUFFER_LENGTH, sizeof(char));
+		list->items[i] = "\0";
 	}
 
 	return list;
@@ -132,6 +133,10 @@ ArrayList *create_list(int maxCapacity)
 
 void destroy_list(ArrayList *list)
 {
+	for (int i = 0; i < list->capacity; i++)
+	{
+		free(list->items[i]);
+	}
 	free(list->items);
 	free(list);
 }
@@ -142,7 +147,8 @@ int add_item(ArrayList *list, char *item)
 	{
 		if (list->items[i] == NULL)
 		{
-			list->items[i] = item;
+			//list->items[i] = item;
+			strcpy(list->items[i], item);
 			return 1;
 		}
 	}
@@ -158,8 +164,10 @@ int is_exists(ArrayList *list, char *item)
 			continue;
 		}
 
+		printf("S1: %s, S2: %s\n", list->items[i], item);
 		if (equals(list->items[i], item))
 		{
+			printf("true\n");
 			return TRUE;
 		}
 	}
