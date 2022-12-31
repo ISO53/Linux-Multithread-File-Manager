@@ -13,7 +13,8 @@
 #define MAX_THREAD_CAPACITY 5
 #define MAX_FILE_CAPACITY 10
 #define MAX_QUEUE_SIZE 256
-#define MAX_BUFFER_LENGTH 128
+#define MAX_BUFFER_LENGTH 256
+#define MAX_TOKEN_SIZE 10
 #define MAIN_FIFO_NAME "MAIN_FIFO"
 
 typedef struct
@@ -24,21 +25,22 @@ typedef struct
 	char data[MAX_QUEUE_SIZE][MAX_BUFFER_LENGTH];
 } Queue;
 Queue *create_queue();
-int isEmpty(Queue *queue);
-int isFull(Queue *queue);
-int enqueue(Queue *queue, char *str);
-char *dequeue(Queue *queue);
+int isEmpty(Queue *);
+int isFull(Queue *);
+int enqueue(Queue *, char *);
+int dequeue(Queue *, char *);
 
 typedef struct
 {
 	int size;
 	int capacity;
-	void **items; // array of void pointers
+	char **items; // array of void pointers
 } ArrayList;
 ArrayList *create_list(int);
 void destroy_list(ArrayList *);
-int add_item(ArrayList *, void *);
-void remove_item(ArrayList *, int);
+int add_item(ArrayList *, char *);
+int is_exists(ArrayList *, char *);
+void remove_item(ArrayList *, char *);
 void *get_item(ArrayList *, int);
 
 void *readMainNamedPipe();
@@ -49,12 +51,17 @@ int tokenizeInput(char *, char **, int);
 int equals(char *, char *);
 int writeToPipe(char *, char *);
 int readFromPipe(char *, char *);
+int getLastDigitAsInt(char *);
+void readLineFromFile(char *, int, char *);
+void writeToFile(char *, char *);
 
 pthread_t workerThreadList[MAX_THREAD_CAPACITY];
 pthread_t readerThreadList[MAX_THREAD_CAPACITY];
+int isWorking[MAX_THREAD_CAPACITY];
 ArrayList *fileList;
 Queue *workQueue;
 int currentThreadIndex;
+pthread_mutex_t mutex;
 
 /**
  * @brief Main function
@@ -68,6 +75,12 @@ int main(int argc, char const *argv[])
 	fileList = create_list(MAX_FILE_CAPACITY);
 	workQueue = create_queue();
 	currentThreadIndex = 1;
+	for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
+	{
+		isWorking[i] = FALSE;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
 
 	// Delete the main named pipe if it has been created previosuly
 	unlink(MAIN_FIFO_NAME);
@@ -86,10 +99,6 @@ int main(int argc, char const *argv[])
 
 	// Create worker and reader threads for clients
 	createWorkerThreads(MAX_THREAD_CAPACITY);
-
-	// ARADAKİ İŞLEMŞLER
-	// adsa
-	// asdasd
 
 	for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
 	{
@@ -111,7 +120,7 @@ ArrayList *create_list(int maxCapacity)
 	ArrayList *list = malloc(sizeof(ArrayList));
 	list->size = 0;
 	list->capacity = maxCapacity;
-	list->items = malloc(sizeof(void *) * list->capacity);
+	list->items = malloc(sizeof(char *) * list->capacity);
 
 	for (int i = 0; i < list->capacity; i++)
 	{
@@ -127,7 +136,7 @@ void destroy_list(ArrayList *list)
 	free(list);
 }
 
-int add_item(ArrayList *list, void *item)
+int add_item(ArrayList *list, char *item)
 {
 	for (int i = 0; i < list->capacity; i++)
 	{
@@ -140,9 +149,38 @@ int add_item(ArrayList *list, void *item)
 	return 0;
 }
 
-void remove_item(ArrayList *list, int index)
+int is_exists(ArrayList *list, char *item)
 {
-	list->items[index] = NULL;
+	for (int i = 0; i < list->capacity; i++)
+	{
+		if (list->items[i] == NULL)
+		{
+			continue;
+		}
+
+		if (equals(list->items[i], item))
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+void remove_item(ArrayList *list, char *item)
+{
+	for (int i = 0; i < list->capacity; i++)
+	{
+		if (list->items[i] == NULL)
+		{
+			continue;
+		}
+
+		if (equals(item, list->items[i]))
+		{
+			list->items[i] = NULL;
+			return;
+		}
+	}
 }
 
 void *get_item(ArrayList *list, int index)
@@ -182,16 +220,16 @@ int enqueue(Queue *queue, char *str)
 	queue->size++;
 }
 
-char *dequeue(Queue *queue)
+int dequeue(Queue *queue, char *str)
 {
 	if (isEmpty(queue))
 	{
-		return NULL;
+		return -1;
 	}
 	queue->front = (queue->front + 1) % MAX_QUEUE_SIZE;
-	char *tempData = queue->data[queue->front];
+	strcpy(str, queue->data[queue->front]);
 	queue->size--;
-	return tempData;
+	return 1;
 }
 //************************************* Queue Functions Ends *************************************
 
@@ -242,19 +280,106 @@ void *workerThread()
 {
 	while (TRUE)
 	{
-		// burada mutex lock kullanmak lazım aga
+		// Sleep for 100ms
+		usleep(100000);
 
 		// Get a work from queue if exists
-		char *work = dequeue(workQueue);
+		char work[MAX_BUFFER_LENGTH];
 
-		if (work == NULL)
+		pthread_mutex_lock(&mutex);
+		int status = dequeue(workQueue, work);
+		pthread_mutex_unlock(&mutex);
+
+		if (status < 0)
 		{
-			// Sleep for 100ms then rewind
-			usleep(100000);
 			continue;
 		}
 
-		printf("Work is: %s\n", work);
+		printf("Work is: [%s]\n", work);
+
+		// tokens[0] = pipeName, tokens[1] = command, tokens[2] = parameter...
+		char *tokens[MAX_TOKEN_SIZE];
+		tokenizeInput(work, tokens, MAX_TOKEN_SIZE);
+		int pipeNumber = getLastDigitAsInt(tokens[0]);
+
+		if (equals(tokens[1], "create"))
+		{
+			if (tokens[2] == NULL || strlen(tokens[2]) <= 0)
+			{
+				writeToPipe("File name missing!", tokens[0]);
+			}
+			else if (is_exists(fileList, tokens[2]))
+			{
+				writeToPipe("File already exist!", tokens[0]);
+			}
+			else
+			{
+				FILE *fp = fopen(tokens[2], "a+");
+				add_item(fileList, tokens[2]);
+				writeToPipe("File created.", tokens[0]);
+				fclose(fp);
+			}
+		}
+		else if (equals(tokens[1], "delete"))
+		{
+			if (tokens[2] == NULL || strlen(tokens[2]) <= 0)
+			{
+				writeToPipe("File name missing!", tokens[0]);
+			}
+			else if (!is_exists(fileList, tokens[2]))
+			{
+				writeToPipe("File doesn't exist!", tokens[0]);
+			}
+
+			unlink(tokens[2]);
+			remove_item(fileList, tokens[2]);
+			writeToPipe("File deleted.", tokens[0]);
+		}
+		else if (equals(tokens[1], "read"))
+		{
+			if (tokens[2] == NULL || strlen(tokens[2]) <= 0)
+			{
+				writeToPipe("File name missing!", tokens[0]);
+			}
+			else if (!is_exists(fileList, tokens[2]))
+			{
+				writeToPipe("File doesn't exist!", tokens[0]);
+			}
+			else if (tokens[3] == NULL || strlen(tokens[3]) <= 0)
+			{
+				writeToPipe("File index line missing!", tokens[0]);
+			}
+			char line[MAX_BUFFER_LENGTH];
+			readLineFromFile(tokens[2], atoi(tokens[3]), line);
+			writeToPipe(line, tokens[0]);
+		}
+		else if (equals(tokens[1], "write"))
+		{
+			if (tokens[2] == NULL || strlen(tokens[2]) <= 0)
+			{
+				writeToPipe("File name missing!", tokens[0]);
+			}
+			else if (!is_exists(fileList, tokens[2]))
+			{
+				writeToPipe("File doesn't exist!", tokens[0]);
+			}
+			else if (tokens[3] == NULL || strlen(tokens[3]) <= 0)
+			{
+				writeToPipe("File index line missing!", tokens[0]);
+			}
+			writeToFile(tokens[2], tokens[3]);
+			writeToPipe("Successfully writen to file.", tokens[0]);
+		}
+		else if (equals(tokens[1], "exit"))
+		{
+			writeToPipe("exit.", tokens[0]);
+		}
+		else
+		{
+			writeToPipe("Entered wrong command!.", tokens[0]);
+		}
+
+		isWorking[pipeNumber - 1] = FALSE;
 	}
 }
 
@@ -272,9 +397,17 @@ void *readerThread(void *param)
 	strcpy(pipeName, tempPipeName);
 	printf("pipeName: %s\n", pipeName);
 	free(param);
+	int pipeNumber = getLastDigitAsInt(pipeName);
 
 	while (TRUE)
 	{
+		if (isWorking[pipeNumber - 1] == TRUE)
+		{
+			// Client sent a task to manager and manager is still working on that task. Until
+			// the compilation of that task, reader cannot read any other task from client.
+			continue;
+		}
+
 		// Read data from the unique named pipe
 		char buffer[MAX_BUFFER_LENGTH];
 		readFromPipe(buffer, pipeName);
@@ -284,15 +417,16 @@ void *readerThread(void *param)
 			continue;
 		}
 
-		printf("Data read from the pipe named [%s] is [%s].\n", pipeName, buffer);
-
 		// Add command (buffer) to command queue for worker threads with pipeName attached to it
 		int size = strlen(pipeName) + strlen(buffer) + 2;
 		char commandWithPipeName[size];
 		strcpy(commandWithPipeName, pipeName);
-		strcat(commandWithPipeName, "_");
+		strcat(commandWithPipeName, " ");
 		strcat(commandWithPipeName, buffer);
 		enqueue(workQueue, commandWithPipeName);
+		// commandWithPipeName -> "pipeName buffer"
+
+		isWorking[pipeNumber - 1] = TRUE;
 	}
 }
 
@@ -346,15 +480,15 @@ void *readMainNamedPipe()
  *
  * @param input
  * @param tokens
- * @param length
+ * @param maxLength
  * @return int
  */
-int tokenizeInput(char *input, char **tokens, int length)
+int tokenizeInput(char *input, char **tokens, int maxLength)
 {
 	int counter = 0;
 	char *temp = strtok(input, " ");
 
-	while (temp != NULL && counter < length)
+	while (temp != NULL && counter < maxLength)
 	{
 		tokens[counter++] = temp;
 		temp = strtok(NULL, " ");
@@ -388,7 +522,8 @@ int writeToPipe(char *str, char *pipeName)
 	int fd = open(pipeName, O_WRONLY);
 	if (fd < 0)
 	{
-		perror("Error occured while opening named pipe for reading!\n");
+		printf("Error occured while opening named pipe [%s] for reading!\n", pipeName);
+		perror("");
 		return FALSE;
 	}
 
@@ -397,7 +532,8 @@ int writeToPipe(char *str, char *pipeName)
 	int n = write(fd, str, strlen(str) + 1);
 	if (n < 0)
 	{
-		perror("Error writing to named pipe!\n");
+		printf("Error occured while writing to named pipe [%s]!\n", pipeName);
+		perror("");
 		return FALSE;
 	}
 
@@ -420,7 +556,8 @@ int readFromPipe(char *str, char *pipeName)
 	int fd = open(pipeName, O_RDONLY);
 	if (fd < 0)
 	{
-		perror("Error occured while opening named pipe for reading!\n");
+		printf("Error occured while opening named pipe [%s] for reading!\n", pipeName);
+		perror("");
 		return FALSE;
 	}
 
@@ -428,7 +565,8 @@ int readFromPipe(char *str, char *pipeName)
 	int n = read(fd, str, MAX_BUFFER_LENGTH);
 	if (n < 0)
 	{
-		perror("Error occured while reading from named pipe!\n");
+		printf("Error occured while reading from named pipe [%s]!\n", pipeName);
+		perror("");
 		return FALSE;
 	}
 
@@ -436,4 +574,72 @@ int readFromPipe(char *str, char *pipeName)
 	close(fd);
 
 	return TRUE;
+}
+
+/**
+ * @brief Returns last digit of a string in int type
+ *
+ * @param str
+ * @return int
+ */
+int getLastDigitAsInt(char *str)
+{
+	int length = strlen(str);
+	char last = str[length - 1];
+	int num = (int)(last - '0');
+	return num;
+}
+
+/**
+ * @brief Reads a file from given name and copies the n-th line to given string.
+ *
+ * @param fileName
+ * @param lineIndex
+ * @param str
+ * @return void
+ */
+void readLineFromFile(char *fileName, int lineIndex, char *str)
+{
+	FILE *fp;
+	fp = fopen(fileName, "r");
+	if (fp == NULL)
+	{
+		perror("An error occured while opening file for reading.\n");
+		return;
+	}
+
+	int lineCount = 1;
+	char buffer[MAX_BUFFER_LENGTH];
+	while (fgets(buffer, MAX_BUFFER_LENGTH, fp) != NULL)
+	{
+		if (lineCount == lineIndex)
+		{
+			strcpy(str, buffer);
+			return;
+		}
+		lineCount++;
+	}
+
+	fclose(fp);
+}
+
+/**
+ * @brief Writes given string to file with a given name in append mode
+ *
+ * @param fileName
+ * @param str
+ * @return void
+ */
+void writeToFile(char *fileName, char *str)
+{
+	FILE *fp;
+	fp = fopen(fileName, "a");
+	if (fp == NULL)
+	{
+		perror("An error occured while opening file for writing!\n");
+		return;
+	}
+
+	fprintf(fp, "%s\n", str);
+	fclose(fp);
 }
