@@ -11,7 +11,7 @@
 
 #define TRUE 1
 #define FALSE 0
-#define MAIN_FIFO_NAME "MAIN_FIFO"
+#define MAIN_FIFO_NAME "MAIN_PIPE"
 #define MAX_BUFFER_LENGTH 256
 #define INPUT_STR "\nYour Input -> "
 #define CONNECT "connect"
@@ -27,6 +27,11 @@ int userThreadControl;
 int serviceThreadControl;
 int waiting;
 
+/**
+ * @brief Main function
+ *
+ * @return int
+ */
 int main(int argc, char const *argv[])
 {
     // Infinite loop control for threads
@@ -96,6 +101,11 @@ void readUserInput()
     }
 }
 
+/**
+ * @brief Little animation to tell the user the program is not frozen while waiting
+ *
+ * @return void
+ */
 void *waitingForResponse()
 {
     while (waiting)
@@ -123,7 +133,14 @@ void handleServiceInputs(char *serviceInput)
     char input[MAX_BUFFER_LENGTH];
     strcpy(input, serviceInput);
     free(serviceInput);
-    printf("\nMessage came from manager: %s\n", input);
+    if (strcmp(input, "exit") == 0)
+    {
+        userThreadControl = FALSE;
+    }
+    else
+    {
+        printf("\nMessage came from manager: %s\n", input);
+    }
 }
 
 /**
