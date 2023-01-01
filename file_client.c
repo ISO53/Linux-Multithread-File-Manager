@@ -136,6 +136,8 @@ void handleServiceInputs(char *serviceInput)
     if (strcmp(input, "exit") == 0)
     {
         userThreadControl = FALSE;
+        exit(EXIT_SUCCESS);
+        printf("\nProgram finished!\n");
     }
     else
     {

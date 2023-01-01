@@ -79,7 +79,7 @@ int main(int argc, char const *argv[])
 	for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
 	{
 		isWorking[i] = FALSE;
-		readerThreadControl[i] = FALSE;
+		readerThreadControl[i] = TRUE;
 	}
 
 	pthread_mutex_init(&mutex, NULL);
@@ -159,7 +159,7 @@ int is_exists(ArrayList *list, char *item)
 {
 	for (int i = 0; i < list->capacity; i++)
 	{
-		if (list->items[i] == NULL || strlen(list->items[i]) <= 0)
+		if (list->items[i] == NULL || list->items[i] == "\0" || strlen(list->items[i]) <= 0)
 		{
 			continue;
 		}
@@ -183,15 +183,10 @@ void remove_item(ArrayList *list, char *item)
 
 		if (equals(item, list->items[i]))
 		{
-			list->items[i] = '\0';
+			strcpy(list->items[i], "\0");
 			return;
 		}
 	}
-}
-
-void *get_item(ArrayList *list, int index)
-{
-	return list->items[index];
 }
 //********************************** Array List Functions Ends ***********************************
 
@@ -389,7 +384,7 @@ void *workerThread()
 		else if (equals(tokens[1], "exit"))
 		{
 			readerThreadControl[pipeNumber - 1] = FALSE;
-			writeToPipe("exit.", tokens[0]);
+			writeToPipe("exit", tokens[0]);
 		}
 		else
 		{
