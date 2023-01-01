@@ -1,7 +1,8 @@
 {
 	"files.associations": {
 		"stdlib.h": "c",
-		"pthread.h": "c"
+		"pthread.h": "c",
+		"stat.h": "c"
 	},
 	"makefile.launchConfigurations": [
 		{

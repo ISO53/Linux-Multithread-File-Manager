@@ -7,6 +7,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <readline/readline.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -54,15 +55,21 @@ int readFromPipe(char *, char *);
 int getLastDigitAsInt(char *);
 void readLineFromFile(char *, int, char *);
 void writeToFile(char *, char *);
+void *readUserInput();
+void intToStr(int, char *);
 
 pthread_t workerThreadList[MAX_THREAD_CAPACITY];
 pthread_t readerThreadList[MAX_THREAD_CAPACITY];
 int readerThreadControl[MAX_THREAD_CAPACITY];
+int workerThreadControl;
+int mainThreadControl;
 int isWorking[MAX_THREAD_CAPACITY];
 ArrayList *fileList;
 Queue *workQueue;
 int currentThreadIndex;
 pthread_mutex_t mutex;
+pthread_t mainThread;
+pthread_t userInputThread;
 
 /**
  * @brief Main function
@@ -76,6 +83,8 @@ int main(int argc, char const *argv[])
 	fileList = create_list(MAX_FILE_CAPACITY);
 	workQueue = create_queue();
 	currentThreadIndex = 1;
+	workerThreadControl = TRUE;
+	mainThreadControl = TRUE;
 	for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
 	{
 		isWorking[i] = FALSE;
@@ -96,8 +105,10 @@ int main(int argc, char const *argv[])
 	}
 
 	// Listen main pipe in another thread concurrently
-	pthread_t mainThread;
 	pthread_create(&mainThread, NULL, readMainNamedPipe, NULL);
+
+	// Listen user input in another thread concurrently
+	pthread_create(&userInputThread, NULL, readUserInput, NULL);
 
 	// Create worker and reader threads for clients
 	createWorkerThreads(MAX_THREAD_CAPACITY);
@@ -108,10 +119,13 @@ int main(int argc, char const *argv[])
 		pthread_join(readerThreadList[i], NULL);
 	}
 	pthread_join(mainThread, NULL);
+	pthread_join(userInputThread, NULL);
 
 	destroy_list(fileList);
 
 	unlink(MAIN_FIFO_NAME);
+
+	printf("\nProgram terminated\n");
 
 	return 0;
 }
@@ -279,7 +293,7 @@ void createWorkerThreads(int maxThreadCapacity)
  */
 void *workerThread()
 {
-	while (TRUE)
+	while (workerThreadControl)
 	{
 		// Sleep for 100ms
 		usleep(100000);
@@ -394,6 +408,8 @@ void *workerThread()
 		pthread_mutex_unlock(&mutex);
 		isWorking[pipeNumber - 1] = FALSE;
 	}
+
+	printf("Worker thread terminated.\n");
 }
 
 /**
@@ -442,6 +458,7 @@ void *readerThread(void *param)
 		isWorking[pipeNumber - 1] = TRUE;
 	}
 
+	unlink(pipeName);
 	printf("Reader thread for [%s] is terminated.\n", pipeName);
 }
 
@@ -453,7 +470,7 @@ void *readerThread(void *param)
  */
 void *readMainNamedPipe()
 {
-	while (TRUE)
+	while (mainThreadControl)
 	{
 		// Read data from the main named pipe
 		char buffer[MAX_BUFFER_LENGTH];
@@ -462,6 +479,10 @@ void *readMainNamedPipe()
 		if (buffer == NULL || strlen(buffer) <= 0)
 		{
 			continue;
+		}
+
+		if (equals(buffer, "exit")) {
+			break;
 		}
 
 		// A client wrote 'connect' to the pipe.
@@ -486,6 +507,9 @@ void *readMainNamedPipe()
 		// Create a reader thread for that client
 		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL, readerThread, (void *)pipeName);
 	}
+
+	unlink(MAIN_FIFO_NAME);
+	printf("Main thread terminated.\n");
 }
 
 /**
@@ -659,4 +683,73 @@ void writeToFile(char *fileName, char *str)
 
 	fprintf(fp, "%s\n", str);
 	fclose(fp);
+}
+
+/**
+ * @brief Reads terminal concurrently. If user has entered any input, handles it.
+ *
+ * @return void*
+ */
+void *readUserInput()
+{
+	char *userInput;
+	int userThreadControl = TRUE;
+
+	while (userThreadControl)
+	{
+		userInput = readline("");
+
+		if (userInput == NULL || strlen(userInput) <= 0)
+		{
+			continue;
+		}
+
+		if (!equals(userInput, "exit"))
+		{
+			printf("Entered wrong command!\n");
+			continue;
+		}
+
+		// Terminate reader threads
+		for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
+		{
+			readerThreadControl[i] = FALSE;
+		}
+
+		// If they didn't terminated
+		for (int i = 0; i < MAX_THREAD_CAPACITY; i++)
+		{
+			char number[1];
+			char pipeStr[10] = "pipe";
+			intToStr(i, number);
+			writeToPipe("exit", strcat(pipeStr, number));
+		}
+
+		// Terminate worker threads
+		workerThreadControl = FALSE;
+
+		// Terminate main thread
+		mainThreadControl = FALSE;
+
+		// If it didn't termianted
+		writeToPipe("exit", MAIN_FIFO_NAME);
+
+		// Exit from this thread
+		userThreadControl = FALSE;
+	}
+
+	printf("User input reader thread terminated.\n");
+}
+
+/**
+ * @brief Takes integer as a parameter and returns string representation of it
+ *
+ * @param number
+ * @param str
+ * @return void
+ */
+void intToStr(int number, char *str)
+{
+	snprintf(str, sizeof(str), "%d", number);
+	return;
 }
