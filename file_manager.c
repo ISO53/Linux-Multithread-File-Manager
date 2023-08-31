@@ -1,13 +1,12 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
+#include <readline/readline.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <readline/readline.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -130,7 +129,8 @@ int main(int argc, char const *argv[])
 	return 0;
 }
 
-//************************************* Array List Functions *************************************
+//************************************* Array List Functions
+//*************************************
 ArrayList *create_list(int maxCapacity)
 {
 	ArrayList *list = malloc(sizeof(ArrayList));
@@ -160,7 +160,8 @@ int add_item(ArrayList *list, char *item)
 {
 	for (int i = 0; i < list->capacity; i++)
 	{
-		if (list->items[i] == NULL || list->items[i] == "\0" || strlen(list->items[i]) <= 0)
+		if (list->items[i] == NULL || list->items[i] == "\0" ||
+			strlen(list->items[i]) <= 0)
 		{
 			strcpy(list->items[i], item);
 			return 1;
@@ -173,7 +174,8 @@ int is_exists(ArrayList *list, char *item)
 {
 	for (int i = 0; i < list->capacity; i++)
 	{
-		if (list->items[i] == NULL || list->items[i] == "\0" || strlen(list->items[i]) <= 0)
+		if (list->items[i] == NULL || list->items[i] == "\0" ||
+			strlen(list->items[i]) <= 0)
 		{
 			continue;
 		}
@@ -202,9 +204,11 @@ void remove_item(ArrayList *list, char *item)
 		}
 	}
 }
-//********************************** Array List Functions Ends ***********************************
+//********************************** Array List Functions Ends
+//***********************************
 
-//**************************************** Queue Functions ***************************************
+//**************************************** Queue Functions
+//***************************************
 Queue *create_queue()
 {
 	Queue *queue = (Queue *)malloc(sizeof(Queue));
@@ -213,15 +217,9 @@ Queue *create_queue()
 	return queue;
 }
 
-int isEmpty(Queue *queue)
-{
-	return (queue->size == 0);
-}
+int isEmpty(Queue *queue) { return (queue->size == 0); }
 
-int isFull(Queue *queue)
-{
-	return (queue->size == MAX_QUEUE_SIZE);
-}
+int isFull(Queue *queue) { return (queue->size == MAX_QUEUE_SIZE); }
 
 int enqueue(Queue *queue, char *str)
 {
@@ -246,11 +244,13 @@ int dequeue(Queue *queue, char *str)
 	queue->size--;
 	return 1;
 }
-//************************************* Queue Functions Ends *************************************
+//************************************* Queue Functions Ends
+//*************************************
 
 /**
- * @brief Creates reader and worker threads that reads client pipes concurrently. Every input that
- * has sent by client added to the queue by reader threads. Worker threads reads queue concurrently.
+ * @brief Creates reader and worker threads that reads client pipes
+ * concurrently. Every input that has sent by client added to the queue by
+ * reader threads. Worker threads reads queue concurrently.
  *
  * @param maxThreadcapacity
  * @return void*
@@ -286,8 +286,8 @@ void createWorkerThreads(int maxThreadCapacity)
 }
 
 /**
- * @brief Reads data from queue concurrently. If the queue is not empty, takes the dequeue, analyzes
- * the command and executes it.
+ * @brief Reads data from queue concurrently. If the queue is not empty, takes
+ * the dequeue, analyzes the command and executes it.
  *
  * @return void*
  */
@@ -413,8 +413,9 @@ void *workerThread()
 }
 
 /**
- * @brief Reads data from given pipe name concurrently. If there is a data in the pipe, concantanates
- * pipe name into that data and sends that to queue where worker threads can read and execute.
+ * @brief Reads data from given pipe name concurrently. If there is a data in
+ * the pipe, concantanates pipe name into that data and sends that to queue
+ * where worker threads can read and execute.
  *
  * @param pipeName
  * @return void*
@@ -432,8 +433,9 @@ void *readerThread(void *param)
 	{
 		if (isWorking[pipeNumber - 1] == TRUE)
 		{
-			// Client sent a task to manager and manager is still working on that task. Until
-			// the compilation of that task, reader cannot read any other task from client.
+			// Client sent a task to manager and manager is still working on that
+			// task. Until the compilation of that task, reader cannot read any other
+			// task from client.
 			continue;
 		}
 
@@ -446,7 +448,8 @@ void *readerThread(void *param)
 			continue;
 		}
 
-		// Add command (buffer) to command queue for worker threads with pipeName attached to it
+		// Add command (buffer) to command queue for worker threads with pipeName
+		// attached to it
 		int size = strlen(pipeName) + strlen(buffer) + 2;
 		char commandWithPipeName[size];
 		strcpy(commandWithPipeName, pipeName);
@@ -463,8 +466,9 @@ void *readerThread(void *param)
 }
 
 /**
- * @brief Reads the main pipe concurrently. If any client tries to connect check if there are
- * available thread. If there are return the available pipe's name to client.
+ * @brief Reads the main pipe concurrently. If any client tries to connect check
+ * if there are available thread. If there are return the available pipe's name
+ * to client.
  *
  * @return void*
  */
@@ -481,7 +485,8 @@ void *readMainNamedPipe()
 			continue;
 		}
 
-		if (equals(buffer, "exit")) {
+		if (equals(buffer, "exit"))
+		{
 			break;
 		}
 
@@ -505,7 +510,8 @@ void *readMainNamedPipe()
 		writeToPipe(pipeName, MAIN_FIFO_NAME);
 
 		// Create a reader thread for that client
-		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL, readerThread, (void *)pipeName);
+		pthread_create(&readerThreadList[currentThreadIndex - 2], NULL,
+					   readerThread, (void *)pipeName);
 	}
 
 	unlink(MAIN_FIFO_NAME);
@@ -513,9 +519,9 @@ void *readMainNamedPipe()
 }
 
 /**
- * @brief Tokenizes the given input into an array of strings and returns the number
- * of tokenized elements. If the number doesnt match the length, than there is
- * less token than the given arrays size.
+ * @brief Tokenizes the given input into an array of strings and returns the
+ * number of tokenized elements. If the number doesnt match the length, than
+ * there is less token than the given arrays size.
  *
  * @param input
  * @param tokens
@@ -543,10 +549,7 @@ int tokenizeInput(char *input, char **tokens, int maxLength)
  * @param str2
  * @return int
  */
-int equals(char *str1, char *str2)
-{
-	return strcmp(str1, str2) == 0;
-}
+int equals(char *str1, char *str2) { return strcmp(str1, str2) == 0; }
 
 /**
  * @brief Writes given string to given pipe
@@ -558,10 +561,12 @@ int equals(char *str1, char *str2)
 int writeToPipe(char *str, char *pipeName)
 {
 	// Open the pipe for writing
+
 	int fd = open(pipeName, O_WRONLY);
 	if (fd < 0)
 	{
-		printf("Error occured while opening named pipe [%s] for reading!\n", pipeName);
+		printf("Error occured while opening named pipe [%s] for reading!\n",
+			   pipeName);
 		perror("");
 		return FALSE;
 	}
@@ -595,7 +600,8 @@ int readFromPipe(char *str, char *pipeName)
 	int fd = open(pipeName, O_RDONLY);
 	if (fd < 0)
 	{
-		printf("Error occured while opening named pipe [%s] for reading!\n", pipeName);
+		printf("Error occured while opening named pipe [%s] for reading!\n",
+			   pipeName);
 		perror("");
 		return FALSE;
 	}
@@ -686,7 +692,8 @@ void writeToFile(char *fileName, char *str)
 }
 
 /**
- * @brief Reads terminal concurrently. If user has entered any input, handles it.
+ * @brief Reads terminal concurrently. If user has entered any input, handles
+ * it.
  *
  * @return void*
  */
